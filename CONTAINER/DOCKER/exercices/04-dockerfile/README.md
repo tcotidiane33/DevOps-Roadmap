@@ -1,525 +1,614 @@
-# Exercice 04 : Dockerfile - Créer Votre Première Image
+# Exercice 04 : Premier Dockerfile
 
 ## 🎯 Objectifs
 
 À la fin de cet exercice, vous saurez :
-- ✅ Créer un Dockerfile
-- ✅ Comprendre les instructions de base
-- ✅ Builder une image
-- ✅ Optimiser en utilisant le cache
-- ✅ Tag et versionner vos images
+- ✅ Créer un Dockerfile from scratch
+- ✅ Comprendre les instructions de base (FROM, RUN, COPY, CMD)
+- ✅ Build une image Docker
+- ✅ Optimiser le cache des layers
+- ✅ Utiliser .dockerignore
 
 ## ⏱️ Durée Estimée
-**2 heures**
+**1 heure 30 minutes**
 
 ## 📋 Prérequis
-- Docker installé (Exercice 01 ✅)
-- Comprendre les containers (Exercice 02-03 ✅)
+- [Exercice 03 : Docker CLI](../03-docker-cli/README.md) complété
 
 ---
 
 ## 📚 Partie 1 : Premier Dockerfile Simple
 
-### Créer la Structure
+### Exercice 1.1 : Hello World Container
 
 ```bash
-# Créer dossier projet
-mkdir my-first-image
-cd my-first-image
+# Créer un répertoire de travail
+mkdir -p ~/docker-exercices/hello-world
+cd ~/docker-exercices/hello-world
 
-# Créer fichier
-touch Dockerfile
-```
-
-### Dockerfile Minimal
-
-```dockerfile
-# Image de base
+# Créer un Dockerfile
+cat > Dockerfile << 'EOF'
 FROM ubuntu:22.04
 
-# Exécuter commande
-RUN apt-get update && apt-get install -y curl
+CMD echo "Hello from my first Dockerfile!"
+EOF
 
-# Commande par défaut
-CMD ["/bin/bash"]
+# Build l'image
+docker build -t my-hello .
+
+# Tester
+docker run --rm my-hello
 ```
 
-### Builder l'Image
+**💡 Explications :**
+- `FROM` : Image de base
+- `CMD`: Commande exécutée au démarrage
+- `.` : Build context (répertoire courant)
+
+### Exercice 1.2 : Script Personnalisé
 
 ```bash
+# Créer un script
+cat > hello.sh << 'EOF'
+#!/bin/bash
+echo "🐳 Container started at: $(date)"
+echo "🖥️  Hostname: $(hostname)"
+echo "👤 User: $(whoami)"
+EOF
+
+# Dockerfile
+cat > Dockerfile << 'EOF'
+FROM ubuntu:22.04
+
+# Copier le script
+COPY hello.sh /usr/local/bin/hello.sh
+
+# Le rendre exécutable
+RUN chmod +x /usr/local/bin/hello.sh
+
+# L'exécuter au démarrage
+CMD ["/usr/local/bin/hello.sh"]
+EOF
+
 # Build
-docker build -t my-ubuntu:1.0 .
+docker build -t my-script .
 
-# Explication:
-# -t : tag (nom de l'image)
-# . : contexte de build (dossier actuel)
-
-# Voir l'image créée
-docker images | grep my-ubuntu
+# Run
+docker run --rm my-script
 ```
-
-### Tester
-
-```bash
-# Lancer container
-docker run -it my-ubuntu:1.0
-
-# Dans le container, tester curl
-curl --version
-
-# Sortir
-exit
-```
-
-**✅ Checkpoint :** Vous avez créé et lancé votre première image !
 
 ---
 
-## 📚 Partie 2 : Application Node.js
+## 📚 Partie 2 : Instructions Principales
 
-### Structure Projet
+### Exercice 2.1 : FROM - Image de Base
 
-```bash
-mkdir node-app
-cd node-app
+```dockerfile
+# Option 1: Version spécifique (RECOMMANDÉ)
+FROM ubuntu:22.04
+
+# Option 2: Tag latest (À ÉVITER en production)
+FROM ubuntu:latest
+
+# Option 3: Image alpine (plus légère)
+FROM alpine:3.18
+
+# Option 4: Image avec langage
+FROM python:3.11-slim
+FROM node:18-alpine
+FROM golang:1.21-alpine
 ```
 
-### Créer `package.json`
+**✅ Best Practice :** Toujours spécifier une version précise pour la reproductibilité
 
-```json
+### Exercice 2.2 : RUN - Exécuter des Commandes
+
+```bash
+mkdir -p ~/docker-exercices/run-demo
+cd ~/docker-exercices/run-demo
+
+cat > Dockerfile << 'EOF'
+FROM ubuntu:22.04
+
+# Mauvaise pratique: plusieurs RUN
+# RUN apt-get update
+# RUN apt-get install -y curl
+# RUN apt-get install -y wget
+
+# Bonne pratique: combiner les RUN
+RUN apt-get update && \
+    apt-get install -y \
+        curl \
+        wget \
+        vim \
+        git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+CMD ["bash"]
+EOF
+
+docker build -t tools-image .
+docker run -it --rm tools-image
+```
+
+**💡 Pourquoi combiner ?**
+- Moins de layers = image plus légère
+- Nettoyage du cache apt dans le même layer
+
+### Exercice 2.3 : COPY vs ADD
+
+```bash
+mkdir -p ~/docker-exercices/copy-add
+cd ~/docker-exercices/copy-add
+
+# Créer des fichiers de test
+echo "Config file" > config.txt
+mkdir app
+echo "console.log('app');" > app/index.js
+
+cat > Dockerfile << 'EOF'
+FROM node:18-alpine
+
+# COPY: Simple copie de fichiers
+COPY config.txt /etc/config.txt
+
+# COPY: Copier un répertoire
+COPY app/ /app/
+
+# ADD peut extraire des archives (utiliser COPY en général)
+# ADD archive.tar.gz /extracted/
+
+WORKDIR /app
+CMD ["node", "index.js"]
+EOF
+
+docker build -t copy-demo .
+docker run --rm copy-demo
+```
+
+### Exercice 2.4 : WORKDIR
+
+```bash
+cat > Dockerfile << 'EOF'
+FROM node:18-alpine
+
+# Mauvaise pratique
+# RUN cd /app
+# COPY package.json ./
+
+# Bonne pratique
+WORKDIR /app
+COPY package.json .
+COPY . .
+
+CMD ["npm", "start"]
+EOF
+```
+
+### Exercice 2.5 : ENV - Variables d'Environnement
+
+```bash
+cat > Dockerfile << 'EOF'
+FROM node:18-alpine
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    LOG_LEVEL=info
+
+WORKDIR /app
+
+CMD echo "ENV: $NODE_ENV, PORT: $PORT, LOG: $LOG_LEVEL"
+EOF
+
+docker build -t env-demo .
+docker run --rm env-demo
+
+# Override au runtime
+docker run --rm -e NODE_ENV=development env-demo
+```
+
+---
+
+## 📚 Partie 3 : Application Node.js Complète
+
+### Exercice 3.1 : Setup du Projet
+
+```bash
+mkdir -p ~/docker-exercices/node-app
+cd ~/docker-exercices/node-app
+
+# package.json
+cat > package.json << 'EOF'
 {
-  "name": "my-node-app",
+  "name": "docker-node-app",
   "version": "1.0.0",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.0"
+    "express": "^4.18.2"
   }
 }
-```
+EOF
 
-### Créer `server.js`
-
-```javascript
+# server.js
+cat > server.js << 'EOF'
 const express = require('express');
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send('Hello from Docker! 🐳');
+  res.json({
+    message: 'Hello from Dockerized Node.js!',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date() });
+  res.json({ status: 'healthy' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
+EOF
 ```
 
-### Créer Dockerfile
+### Exercice 3.2 : Dockerfile Non-Optimisé
 
 ```dockerfile
-# Image de base
+cat > Dockerfile.bad << 'EOF'
+FROM node:18
+
+# Copier TOUT
+COPY . /app
+
+WORKDIR /app
+
+# Installer
+RUN npm install
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+EOF
+
+# Build
+docker build -f Dockerfile.bad -t node-app:bad .
+
+# Problèmes:
+# - Image lourde (node:18 au lieu de alpine)
+# - Cache npm invalidé à chaque changement de code
+# - Pas de .dockerignore
+```
+
+### Exercice 3.3 : Dockerfile Optimisé
+
+```dockerfile
+cat > Dockerfile << 'EOF'
+# Image légère
 FROM node:18-alpine
+
+# Metadata
+LABEL maintainer="votre@email.com"
+LABEL version="1.0"
+
+# Variables d'environnement
+ENV NODE_ENV=production \
+    PORT=3000
 
 # Répertoire de travail
 WORKDIR /app
 
-# Copier package files
+# Copier SEULEMENT package.json (pour le cache)
 COPY package*.json ./
 
 # Installer dépendances
-RUN npm install
+RUN npm ci --only=production && \
+    npm cache clean --force
 
-# Copier code source
-COPY server.js ./
+# Copier le code source
+COPY server.js .
 
-# Exposer port
+# User non-root (sécurité)
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+USER nodejs
+
+# Port exposé (documentation)
 EXPOSE 3000
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:$PORT/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
 # Commande de démarrage
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
+EOF
+
+# .dockerignore
+cat > .dockerignore << 'EOF'
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.env.local
+Dockerfile*
+.dockerignore
+EOF
+
+# Build
+docker build -t node-app:optimized .
+
+# Comparer les tailles
+docker images | grep node-app
 ```
 
-### Builder et Tester
+### Exercice 3.4 : Tester l'Application
 
 ```bash
-# Build
-docker build -t node-app:1.0 .
-
-# Run avec port mapping
-docker run -d -p 3000:3000 --name myapp node-app:1.0
+# Lancer le container
+docker run -d \
+  --name my-node-app \
+  -p 3000:3000 \
+  -e NODE_ENV=development \
+  node-app:optimized
 
 # Tester
 curl http://localhost:3000
-# → "Hello from Docker! 🐳"
-
 curl http://localhost:3000/health
-# → {"status":"OK","timestamp":"..."}
 
-# Voir logs
-docker logs myapp
+# Voir les logs
+docker logs my-node-app
 
-# Nettoyer
-docker stop myapp
-docker rm myapp
+# Health check
+docker inspect --format='{{json .State.Health}}' my-node-app | jq
+
+# Cleanup
+docker stop my-node-app
+docker rm my-node-app
 ```
 
 ---
 
-## 📚 Partie 3 : Optimiser avec le Cache
+## 📚 Partie 4 : ARG vs ENV
 
-### ❌ Dockerfile Non-Optimisé
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-
-# Tout copié en même temps
-COPY . .
-
-# Install
-RUN npm install
-
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-**Problème :** Chaque modification de code → Rebuild TOUT (npm install inclus)
-
-### ✅ Dockerfile Optimisé
+### Exercice 4.1 : Build Arguments
 
 ```dockerfile
+cat > Dockerfile.args << 'EOF'
 FROM node:18-alpine
-WORKDIR /app
 
-# 1. Copier SEULEMENT package files
-COPY package*.json ./
+# ARG: disponible UNIQUEMENT pendant le build
+ARG VERSION=1.0.0
+ARG BUILD_DATE
 
-# 2. Installer dépendances (cache layer)
-RUN npm ci --only=production
+# ENV: disponible au runtime
+ENV APP_VERSION=${VERSION}
 
-# 3. Copier code source (après)
-COPY server.js ./
+LABEL version=${VERSION}
+LABEL build-date=${BUILD_DATE}
 
-EXPOSE 3000
-CMD ["npm", "start"]
-```
+RUN echo "Building version ${VERSION}"
 
-**Avantage :** 
-- Modification de `server.js` → Utilise cache npm (rapide)
-- Modification de `package.json` → Rebuild npm (normal)
+CMD echo "Running version $APP_VERSION"
+EOF
 
-### Test de Performance
+# Build avec arguments
+docker build \
+  -f Dockerfile.args \
+  --build-arg VERSION=2.0.0 \
+  --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+  -t app:v2 .
 
-```bash
-# Premier build
-time docker build -t node-app:optimized .
-# ⏱️ ~30 secondes
-
-# Modifier server.js (changer message)
-echo "// comment" >> server.js
-
-# Rebuild
-time docker build -t node-app:optimized .
-# ⏱️ ~5 secondes (cache utilisé!)
+# Vérifier
+docker run --rm app:v2
+docker inspect app:v2 | grep -A 5 Labels
 ```
 
 ---
 
-## 📚 Partie 4 : Instructions Avancées
+## 📚 Partie 5 : CMD vs ENTRYPOINT
 
-### ENV : Variables d'Environnement
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-
-# Définir variables
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV DEBUG=false
-
-COPY package*.json ./
-RUN npm ci --only=production
-COPY server.js ./
-
-EXPOSE ${PORT}
-
-CMD ["npm", "start"]
-```
-
-**Utilisation :**
-```bash
-# Override au runtime
-docker run -e PORT=4000 -e DEBUG=true -p 4000:4000 node-app
-```
-
-### ARG : Arguments de Build
+### Exercice 5.1 : CMD Seul
 
 ```dockerfile
-FROM node:18-alpine
+cat > Dockerfile.cmd << 'EOF'
+FROM alpine:3.18
 
-# Argument de build
-ARG NODE_VERSION=18
+CMD ["echo", "Hello World"]
+EOF
 
-WORKDIR /app
+docker build -f Dockerfile.cmd -t cmd-demo .
 
-# Utiliser ARG
-RUN echo "Building with Node.js ${NODE_VERSION}"
-
-COPY package*.json ./
-RUN npm ci --only=production
-COPY server.js ./
-
-EXPOSE 3000
-CMD ["npm", "start"]
+# Utilisation
+docker run --rm cmd-demo              # Hello World
+docker run --rm cmd-demo echo "Bye"   # Bye (override CMD)
 ```
 
-**Utilisation :**
-```bash
-# Passer argument au build
-docker build --build-arg NODE_VERSION=20 -t node-app:node20 .
-```
-
-### USER : Sécurité (non-root)
+### Exercice 5.2 : ENTRYPOINT Seul
 
 ```dockerfile
-FROM node:18-alpine
-WORKDIR /app
+cat > Dockerfile.entrypoint << 'EOF'
+FROM alpine:3.18
 
-# Créer user non-root
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+ENTRYPOINT ["echo"]
+EOF
 
-COPY --chown=nodejs:nodejs package*.json ./
-RUN npm ci --only=production
+docker build -f Dockerfile.entrypoint -t entry-demo .
 
-COPY --chown=nodejs:nodejs server.js ./
-
-# Changer vers user nodejs
-USER nodejs
-
-EXPOSE 3000
-CMD ["npm", "start"]
+# Utilisation
+docker run --rm entry-demo "Hello"    # Hello
+docker run --rm entry-demo "Hi" "There"  # Hi There
 ```
 
-**Test :**
-```bash
-docker build -t node-app:secure .
-docker run -d -p 3000:3000 node-app:secure
+### Exercice 5.3 : ENTRYPOINT + CMD (Meilleure Pratique)
 
-# Vérifier user
-docker exec $(docker ps -ql) whoami
-# → nodejs (pas root ✅)
+```dockerfile
+cat > Dockerfile.both << 'EOF'
+FROM alpine:3.18
+
+ENTRYPOINT ["echo"]
+CMD ["Default message"]
+EOF
+
+docker build -f Dockerfile.both -t both-demo .
+
+# Utilisation
+docker run --rm both-demo              # Default message
+docker run --rm both-demo "Custom"     # Custom
 ```
 
 ---
 
-## 📚 Partie 5 : Multi-Instructions
+## 📚 Partie 6 : Multi-Language Examples
 
-### LABEL : Métadonnées
-
-```dockerfile
-FROM node:18-alpine
-
-LABEL maintainer="votre@email.com"
-LABEL version="1.0"
-LABEL description="My Node.js application"
-
-WORKDIR /app
-# ...
-```
-
-### HEALTHCHECK : Santé du Container
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --only=production
-COPY server.js ./
-
-EXPOSE 3000
-
-# Health check (toutes les 30s)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
-
-CMD ["npm", "start"]
-```
-
-**Test :**
-```bash
-docker run -d -p 3000:3000 --name healthy node-app:health
-
-# Voir santé
-docker ps
-# STATUS: healthy
-
-docker inspect healthy --format='{{.State.Health.Status}}'
-# → healthy
-```
-
----
-
-## 📚 Partie 6 : .dockerignore
-
-### Créer .dockerignore
-
-```
-# Dépendances
-node_modules/
-npm-debug.log
-
-# Git
-.git/
-.gitignore
-
-# IDE
-.vscode/
-.idea/
-
-# Tests
-tests/
-*.test.js
-
-# Documentation
-README.md
-docs/
-
-# Fichiers système
-.DS_Store
-Thumbs.db
-```
-
-**Avantage :** Build plus rapide (moins de fichiers copiés)
-
----
-
-## 📚 Partie 7 : Tags et Versions
-
-### Stratégie de Tagging
+### Python Flask App
 
 ```bash
-# Version spécifique
-docker build -t node-app:1.0.0 .
-docker build -t node-app:1.0 .
-docker build -t node-app:1 .
+mkdir -p ~/docker-exercices/python-app
+cd ~/docker-exercices/python-app
 
-# Latest
-docker build -t node-app:latest .
+cat > requirements.txt << 'EOF'
+Flask==3.0.0
+EOF
 
-# Avec SHA git
-GIT_SHA=$(git rev-parse --short HEAD)
-docker build -t node-app:${GIT_SHA} .
-
-# Multiples tags en une commande
-docker build -t node-app:1.0.0 -t node-app:latest .
-```
-
-### Lister toutes les images
-
-```bash
-docker images node-app
-
-# REPOSITORY   TAG       IMAGE ID       SIZE
-# node-app     1.0.0     abc123         150MB
-# node-app     latest    abc123         150MB
-# node-app     abc123    abc123         150MB
-```
-
----
-
-## ✅ Exercices Pratiques
-
-### Exercice 1 : Application Python
-
-Créer une app Flask :
-
-**app.py :**
-```python
-from flask import Flask
+cat > app.py << 'EOF'
+from flask import Flask, jsonify
 app = Flask(__name__)
 
 @app.route('/')
 def hello():
-    return 'Hello from Python Docker!'
+    return jsonify(message="Hello from Flask + Docker!")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-```
+EOF
 
-**requirements.txt :**
-```
-Flask==2.3.0
-```
+cat > Dockerfile << 'EOF'
+FROM python:3.11-slim
 
-**Créer Dockerfile pour cette app**
-
-<details>
-<summary>Solution</summary>
-
-```dockerfile
-FROM python:3.11-alpine
 WORKDIR /app
-COPY requirements.txt ./
+
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py ./
+
+COPY app.py .
+
+RUN adduser --disabled-password --gecos '' appuser
+USER appuser
+
 EXPOSE 5000
+
 CMD ["python", "app.py"]
+EOF
+
+cat > .dockerignore << 'EOF'
+__pycache__
+*.pyc
+.venv
+EOF
+
+docker build -t python-app .
+docker run -d -p 5000:5000 --name flask-app python-app
+curl http://localhost:5000
+docker stop flask-app && docker rm flask-app
 ```
+
+### Go Application
 
 ```bash
-docker build -t python-app .
-docker run -d -p 5000:5000 python-app
-curl http://localhost:5000
+mkdir -p ~/docker-exercices/go-app
+cd ~/docker-exercices/go-app
+
+cat > main.go << 'EOF'
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hello from Go + Docker!")
+}
+
+func main() {
+    http.HandleFunc("/", handler)
+    fmt.Println("Server starting on :8080")
+    http.ListenAndServe(":8080", nil)
+}
+EOF
+
+cat > Dockerfile << 'EOF'
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+COPY main.go .
+
+RUN go build -o server main.go
+
+FROM alpine:3.18
+COPY --from=builder /app/server /server
+
+EXPOSE 8080
+CMD ["/server"]
+EOF
+
+docker build -t go-app .
+docker run -d -p 8080:8080 --name go-server go-app
+curl http://localhost:8080
+docker stop go-server && docker rm go-server
 ```
-</details>
-
-### Exercice 2 : Optimisation
-
-Comparer taille image :
-- `FROM node:18` vs `FROM node:18-alpine`
-- Avec et sans `--only=production`
-
-### Exercice 3 : Multi-Tags
-
-Builder une image avec 3 tags différents en une commande.
 
 ---
 
-## 🐛 Troubleshooting
+## ✅ Exercice de Validation
 
-### Erreur : "failed to compute cache key"
+Créez une application web complète avec Dockerfile optimisé :
 
-```bash
-# Cause: Fichier COPY inexistant
-# Solution: Vérifier chemins fichiers
-ls -la
-```
+**Checklist :**
+- [ ] Image de base alpine ou slim
+- [ ] .dockerignore configuré
+- [ ] Dependencies installées avant le code (cache)
+- [ ] User non-root
+- [ ] Health check
+- [ ] Labels (version, maintainer)
+- [ ] EXPOSE documente le port
+- [ ] CMD utilise la forme exec
 
-### Erreur : "Cannot connect to Docker daemon"
+---
 
-```bash
-# Solution: Démarrer Docker Desktop
-# Ou vérifier service docker (Linux)
-sudo systemctl start docker
-```
+## 🎯 Défis
+
+### Défi 1 : Static Website
+
+Créez un container nginx servant un site HTML statique.
+
+### Défi 2 : Database Init
+
+Créez un Dockerfile PostgreSQL qui exécute un script SQL au démarrage.
+
+### Défi 3 : Multi-service
+
+Créez une image qui démarre nginx ET php-fpm (indice: supervisord).
+
+---
 
 ## 🎓 Ce Que Vous Avez Appris
 
-- ✅ Syntaxe Dockerfile
-- ✅ Instructions essentielles (FROM, COPY, RUN, CMD)
-- ✅ Optimisation avec cache layers
-- ✅ Variables (ENV, ARG)
-- ✅ Sécurité (USER)
-- ✅ Health checks
-- ✅ Tagging et versioning
+- ✅ Créer un Dockerfile
+- ✅ Instructions principales (FROM, RUN, COPY, CMD)
+- ✅ Optimisation du cache
+- ✅ .dockerignore
+- ✅ ARG vs ENV
+- ✅ CMD vs ENTRYPOINT
+- ✅ Best practices de sécurité
 
 ---
 
@@ -532,4 +621,4 @@ sudo systemctl start docker
 ## 📚 Ressources
 
 - [Dockerfile Reference](https://docs.docker.com/engine/reference/builder/)
-- [Best Practices](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
+- [Best Practices for Writing Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
