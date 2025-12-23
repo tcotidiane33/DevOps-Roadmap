@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-demo
+  template:
+    metadata:
+      labels:
+        app: config-demo
+    spec:
+      containers:
+      - name: demo
+        image: busybox
+        command: ["/bin/sh", "-c", "while true; do echo Menu is $MENU and Color is $COLOR; sleep 5; done"]
+        envFrom:
+        - configMapRef:
+            name: app-config
